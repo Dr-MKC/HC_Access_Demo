@@ -1,35 +1,272 @@
 <!DOCTYPE html>
 <html>
 <head>
+  <meta charset="UTF-8">
   <title>Clinic Finder</title>
   <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
 </head>
 
 <body>
-  <h1>Find a Clinic</h1>
 
-  <select id="clinicType">
-    <option value="">Select clinic type</option>
-  </select>
-
-  <select id="insurance" disabled>
-    <option value="">Select insurance</option>
-  </select>
-
-  <select id="city" disabled>
-    <option value="">Select city</option>
-  </select>
-
-  <div id="results"></div>
-
-  <script src="script.js"></script>
-</body>
-
+<!-- Language Selector -->
 <div style="position: absolute; top: 10px; right: 10px;">
   <select id="languageSelect">
-  <option value="" disabled>Select Language</option>
-  <option value="en" selected>English</option>
-  <option value="es">Español</option>
-  <option value="ar">العربية</option>
-</select>
+    <option value="en">English</option>
+    <option value="es">Español</option>
+    <option value="ar">العربية</option>
+  </select>
+</div>
+
+<h1>Find a Clinic</h1>
+
+<select id="clinicType"></select>
+<select id="insurance" disabled></select>
+<select id="city" disabled></select>
+
+<div id="results"></div>
+
+<script>
+// ==============================
+// Global State
+// ==============================
+let data = [];
+let currentLanguage = "en";
+
+// ==============================
+// Translations
+// ==============================
+const translations = {
+  en: {
+    title: "Find a Clinic",
+    clinicType: "Select clinic type",
+    insurance: "Select insurance",
+    city: "Select city",
+    noResults: "No clinics found.",
+    viewMap: "View on Map",
+    cityLabel: "City",
+    insuranceLabel: "Insurance"
+  },
+  es: {
+    title: "Encontrar una clínica",
+    clinicType: "Seleccione tipo de clínica",
+    insurance: "Seleccione seguro",
+    city: "Seleccione ciudad",
+    noResults: "No se encontraron clínicas.",
+    viewMap: "Ver en el mapa",
+    cityLabel: "Ciudad",
+    insuranceLabel: "Seguro"
+  },
+  ar: {
+    title: "ابحث عن عيادة",
+    clinicType: "اختر نوع العيادة",
+    insurance: "اختر التأمين",
+    city: "اختر المدينة",
+    noResults: "لم يتم العثور على عيادات",
+    viewMap: "عرض على الخريطة",
+    cityLabel: "المدينة",
+    insuranceLabel: "التأمين"
+  }
+};
+
+// ==============================
+// Init
+// ==============================
+document.addEventListener("DOMContentLoaded", () => {
+  document.getElementById("languageSelect").addEventListener("change", (e) => {
+    currentLanguage = e.target.value;
+    updateUI();
+  });
+
+  document.getElementById("clinicType").addEventListener("change", onClinicType);
+  document.getElementById("insurance").addEventListener("change", onInsurance);
+  document.getElementById("city").addEventListener("change", onCity);
+
+  loadExcel();
+});
+
+// ==============================
+// Load Excel
+// ==============================
+function loadExcel() {
+  fetch("Sample_Clinics.xlsx")
+    .then(res => res.arrayBuffer())
+    .then(ab => {
+      const wb = XLSX.read(ab, { type: "array" });
+      const sheet = wb.Sheets[wb.SheetNames[0]];
+      data = XLSX.utils.sheet_to_json(sheet);
+
+      updateUI(); // render UI after data loads
+    });
+}
+
+// ==============================
+// Helpers
+// ==============================
+function parseInsurance(str) {
+  if (!str) return [];
+  return str.split(";").map(s => s.trim());
+}
+
+function resetDropdown(id, placeholder) {
+  const el = document.getElementById(id);
+  el.innerHTML = `<option value="">${placeholder}</option>`;
+  el.disabled = true;
+}
+
+function clearResults() {
+  document.getElementById("results").innerHTML = "";
+}
+
+// ==============================
+// UI Update (FIXED)
+// ==============================
+function updateUI() {
+  const t = translations[currentLanguage];
+
+  // Title
+  document.querySelector("h1").textContent = t.title;
+
+  // Reset dropdowns
+  resetDropdown("clinicType", t.clinicType);
+  resetDropdown("insurance", t.insurance);
+  resetDropdown("city", t.city);
+
+  // RTL support
+  document.body.style.direction = currentLanguage === "ar" ? "rtl" : "ltr";
+
+  clearResults();
+
+  // IMPORTANT: enable + populate clinic type
+  if (data.length > 0) {
+    populateClinicTypes();
+    document.getElementById("clinicType").disabled = false;
+  }
+}
+
+// ==============================
+// Populate Clinic Types
+// ==============================
+function populateClinicTypes() {
+  const t = translations[currentLanguage];
+  const types = [...new Set(data.map(d => d.clinic_type))];
+
+  const el = document.getElementById("clinicType");
+  el.innerHTML = `<option value="">${t.clinicType}</option>`;
+  el.disabled = false;
+
+  types.forEach(type => {
+    const opt = document.createElement("option");
+    opt.value = type;
+    opt.textContent = type;
+    el.appendChild(opt);
+  });
+}
+
+// ==============================
+// Event Handlers
+// ==============================
+function onClinicType() {
+  const t = translations[currentLanguage];
+  const type = this.value;
+
+  resetDropdown("insurance", t.insurance);
+  resetDropdown("city", t.city);
+  clearResults();
+
+  if (!type) return;
+
+  const insSet = new Set();
+
+  data
+    .filter(d => d.clinic_type === type)
+    .forEach(d => parseInsurance(d.insurance).forEach(i => insSet.add(i)));
+
+  const el = document.getElementById("insurance");
+  el.disabled = false;
+
+  insSet.forEach(i => {
+    const opt = document.createElement("option");
+    opt.value = i;
+    opt.textContent = i;
+    el.appendChild(opt);
+  });
+}
+
+function onInsurance() {
+  const t = translations[currentLanguage];
+  const type = document.getElementById("clinicType").value;
+  const insurance = this.value;
+
+  resetDropdown("city", t.city);
+  clearResults();
+
+  if (!insurance) return;
+
+  const cities = new Set();
+
+  data.forEach(d => {
+    if (
+      d.clinic_type === type &&
+      parseInsurance(d.insurance).includes(insurance)
+    ) {
+      cities.add(d.city);
+    }
+  });
+
+  const el = document.getElementById("city");
+  el.disabled = false;
+
+  cities.forEach(c => {
+    const opt = document.createElement("option");
+    opt.value = c;
+    opt.textContent = c;
+    el.appendChild(opt);
+  });
+}
+
+function onCity() {
+  const t = translations[currentLanguage];
+  const type = document.getElementById("clinicType").value;
+  const insurance = document.getElementById("insurance").value;
+  const city = this.value;
+
+  clearResults();
+
+  if (!city) return;
+
+  const results = data.filter(d =>
+    d.clinic_type === type &&
+    parseInsurance(d.insurance).includes(insurance) &&
+    d.city === city
+  );
+
+  const container = document.getElementById("results");
+
+  if (results.length === 0) {
+    container.innerHTML = `<p>${t.noResults}</p>`;
+    return;
+  }
+
+  results.forEach(c => {
+    const div = document.createElement("div");
+    div.style.border = "1px solid #ccc";
+    div.style.padding = "10px";
+    div.style.margin = "10px 0";
+
+    div.innerHTML = `
+      <h3>${c.clinic_name || ""}</h3>
+      <p>${c.address || ""}</p>
+      <p><strong>${t.cityLabel}:</strong> ${c.city || ""}</p>
+      <p><strong>${t.insuranceLabel}:</strong> ${c.insurance || ""}</p>
+      <a href="https://www.google.com/maps?q=${c.lat},${c.lng}" target="_blank">
+        ${t.viewMap}
+      </a>
+    `;
+
+    container.appendChild(div);
+  });
+}
+</script>
+
+</body>
 </html>
